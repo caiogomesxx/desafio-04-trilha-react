@@ -1,9 +1,20 @@
+import { useState } from 'react';
 import { GetStaticProps } from 'next';
-
+import Head from 'next/head';
+import Link from 'next/link';
+import { FiCalendar, FiUser } from 'react-icons/fi';
+import { CgUser } from 'react-icons/cg'
+import Prismic from '@prismicio/client';
+import { format } from 'date-fns';
+import ptBR from 'date-fns/locale/pt-BR';
+import { AiOutlineCalendar} from 'react-icons/ai'
 import { getPrismicClient } from '../services/prismic';
+
+
 
 import commonStyles from '../styles/common.module.scss';
 import styles from './home.module.scss';
+import Header from '../components/Header';
 
 interface Post {
   uid?: string;
@@ -22,15 +33,119 @@ interface PostPagination {
 
 interface HomeProps {
   postsPagination: PostPagination;
+  preview: boolean;
 }
 
-// export default function Home() {
-//   // TODO
-// }
+export default function Home({
+  postsPagination: {
+    next_page,
+    results,
+  },
+  preview,
+}: HomeProps) {
+  const [posts, setPosts] = useState(results)
+  const [nextPageUrl, setNextPageUrl] = useState(next_page)
 
-// export const getStaticProps = async () => {
-//   // const prismic = getPrismicClient();
-//   // const postsResponse = await prismic.query(TODO);
+  function handleLoadMorePosts() {
+    fetch(nextPageUrl)
+      .then(response => response.json())
+      .then(data => {
+        const newPosts: Post[] = data.results.map(result => ({
+          uid: result.uid,
+          first_publication_date: result.first_publication_date,
+          data: {
+            title: result.data.title,
+            subtitle: result.data.subtitle,
+            author: result.data.author,
+          }
+        }))
 
-//   // TODO
-// };
+        setPosts([...posts, ...newPosts])
+        setNextPageUrl(data.next_page)
+      })
+  }
+
+  return (
+    <>
+      <Header/>
+      
+
+        <main className={styles.container}>
+        <div className={styles.posts}>
+          {posts.map(post => (
+            <Link href={`post/${post.uid}`} key={post.uid}>
+              <a href="" className={styles.post}>
+                <strong className={styles.title}>
+                  {post.data.title}
+                </strong>
+                <p className={styles.subtitle}>
+                  {post.data.subtitle}
+                </p>
+                <div>
+                    <p><AiOutlineCalendar className={styles.icon}/> {
+                        format(
+                          new Date( post.first_publication_date ),
+                          'dd MMM YYY',
+                          { locale: ptBR }
+                        )
+                      }</p>
+                    <p><CgUser className={styles.icon}/> {post.data.author}</p>
+                    </div>
+                 
+               
+              </a>
+            </Link>
+          ))}
+
+        {
+          nextPageUrl !== null ? (
+            
+            <button type="button" onClick={() => handleLoadMorePosts()} className={styles.title}>
+                Carregar mais posts
+              </button>
+              
+              ) : ''
+            }
+            </div>
+            </main>
+        
+    </>
+  )
+}
+
+export const getStaticProps: GetStaticProps<HomeProps> = async ({
+  preview = false,
+  previewData,
+}) => {
+  const prismic = getPrismicClient();
+  const postsResponse = await prismic.query(
+    Prismic.Predicates.at('document.type', 'posts'),
+    {
+      orderings : '[document.first_publication_date desc, my.posts.title desc]',
+      fetch: ['posts.title', 'posts.subtitle', 'posts.author'],
+      pageSize: 1,
+      ref: previewData?.ref ?? null,
+    }
+  );
+
+  const posts: Post[] = postsResponse.results.map(result => ({
+    uid: result.uid,
+    first_publication_date: result.first_publication_date,
+    data: {
+      title: result.data.title,
+      subtitle: result.data.subtitle,
+      author: result.data.author,
+    }
+  }))
+
+  return {
+    props: {
+      postsPagination: {
+        next_page: postsResponse.next_page,
+        results: posts,
+      },
+      preview,
+    },
+    revalidate: 60 * 30 // 30 minutes
+  }
+};
